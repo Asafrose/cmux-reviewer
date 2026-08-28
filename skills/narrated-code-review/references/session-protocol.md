@@ -82,6 +82,12 @@ cmux-review show
 
 Conversation notes can omit a location. Out-of-scope findings promoted into the current review use `--promote`.
 
+Keep the agent conversation and one review pane. Move the visual pane to another chapter with:
+
+```bash
+cmux-review chapter --select request-flow --open
+```
+
 When the chapter diff is open in Hunk, the reviewer can attach comments directly to lines. Import new human-authored notes into the active chapter with:
 
 ```bash

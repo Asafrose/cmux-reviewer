@@ -45,12 +45,12 @@ export function parseHunkNotes(value: unknown): ReviewNote[] {
   for (const item of source) {
     if (!isRecord(item)) continue;
     const path = stringValue(item.filePath) || stringValue(item.file) || stringValue(item.path);
-    const newLine = numberValue(item.newLine) || numberValue(item.new_line);
-    const oldLine = numberValue(item.oldLine) || numberValue(item.old_line);
+    const newLine = numberValue(item.newLine) || numberValue(item.new_line) || rangeEnd(item.newRange) || rangeEnd(item.new_range);
+    const oldLine = numberValue(item.oldLine) || numberValue(item.old_line) || rangeEnd(item.oldRange) || rangeEnd(item.old_range);
     const body = stringValue(item.summary) || stringValue(item.body) || stringValue(item.rationale);
     const line = newLine || oldLine;
     if (!path || !line || !body) continue;
-    const externalId = stringValue(item.id) || createHash("sha256").update(`${path}:${line}:${body}`).digest("hex").slice(0, 16);
+    const externalId = stringValue(item.noteId) || stringValue(item.note_id) || stringValue(item.id) || createHash("sha256").update(`${path}:${line}:${body}`).digest("hex").slice(0, 16);
     notes.push({
       id: `hunk:${externalId}`,
       body,
@@ -73,4 +73,9 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+function rangeEnd(value: unknown): number | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return numberValue(value[1]) || numberValue(value[0]);
 }

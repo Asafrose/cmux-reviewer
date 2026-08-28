@@ -1,13 +1,13 @@
 # cmux-reviewer
 
-A persistent, chapter-based GitHub code-review walkthrough for cmux. It separates understanding a change from judging it, keeps the model's opinion behind an optional **LLM Lens**, and requires an exact summary checkpoint before publishing review comments.
+A persistent, chapter-based GitHub code-review walkthrough for cmux. The agent narrates in one pane while Hunk or cmux shows the current chapter in one adjacent review pane. It separates understanding a change from judging it, keeps the model's opinion behind an optional **LLM Lens**, and requires an exact summary checkpoint before publishing review comments.
 
 ## Current MVP
 
 - Versioned JSON review sessions that survive terminal and cmux restarts
 - Intent clarity score with known, inferred, and unknown evidence
 - Small, logically ordered chapters with explicit outcomes
-- Optional LLM Lens, automatic text diagrams, conversation notes, and inline notes
+- Optional LLM Lens, automatic diagrams, conversation notes, and inline notes
 - Chapter-scoped Hunk diffs with inline-note sync; cmux native diff is the fallback
 - Exact editable review draft and guarded GitHub publication
 
@@ -24,12 +24,12 @@ The runtime has no package dependencies. Run `bun install` only when you want th
 
 The narrated workflow is defined in [`skills/narrated-code-review/SKILL.md`](skills/narrated-code-review/SKILL.md). The manifest and draft formats are documented in [`skills/narrated-code-review/references/session-protocol.md`](skills/narrated-code-review/references/session-protocol.md).
 
-The TUI uses these keys:
+The agent advances the single review pane chapter by chapter:
 
-```text
-j/k navigate  o open diff  i sync Hunk notes  l lens  n note
-a approve  c concerns  u unclear  d defer
-s summary  q quit
+```bash
+cmux-review chapter --select request-flow --open
+cmux-review sync-hunk --chapter request-flow
+cmux-review outcome --chapter request-flow --set approved
 ```
 
 Publication is deliberately separate:
@@ -43,4 +43,4 @@ cmux-review publish --confirm
 
 `publish` submits one GitHub pull-request review containing the selected review event and all inline comments. Every `gh` invocation is executed without `GITHUB_TOKEN`, allowing the GitHub CLI to use its configured credential store.
 
-When [Hunk](https://github.com/modem-dev/hunk) is installed, `o` opens or reloads a live Hunk chapter diff in a cmux pane. Add comments directly in Hunk, then press `i` in the walkthrough to import them. Without Hunk, the same action opens cmux's native diff surface and inline notes can be entered with `n`.
+When [Hunk](https://github.com/modem-dev/hunk) is installed, `launch` opens or reloads a live Hunk chapter diff in one cmux pane. Add comments directly in Hunk, then let the agent import them with `sync-hunk`. Without Hunk, the same command opens cmux's native diff surface.

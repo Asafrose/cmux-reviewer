@@ -2,9 +2,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { publishReview } from "./github";
-import { launchReviewPane } from "./launch";
 import { readHunkUserNotes } from "./hunk";
 import { installSkill } from "./install";
+import { openChapterDiff } from "./cmux";
 import {
   defaultSessionPath,
   loadSession,
@@ -14,7 +14,6 @@ import {
   validateSession,
 } from "./session";
 import { renderSummary } from "./summary";
-import { runTui } from "./tui";
 import { SESSION_VERSION, type ChapterOutcome, type ReviewSession } from "./types";
 
 const args = process.argv.slice(2);
@@ -25,13 +24,11 @@ try {
     printHelp();
   } else if (command === "init") {
     await initCommand(args);
-  } else if (command === "tui") {
-    const sessionPath = await resolveSessionArg(args);
-    await runTui(await loadSession(sessionPath), sessionPath);
   } else if (command === "launch") {
     const sessionPath = await resolveSessionArg(args);
     const session = await loadSession(sessionPath);
-    console.log(launchReviewPane(sessionPath, session.repoRoot));
+    await openChapterDiff(session, session.chapters[session.currentChapter]!, sessionPath);
+    console.log(session.chapters[session.currentChapter]!.id);
   } else if (command === "install-skill") {
     const skillsDir = takeOption(args, "--skills-dir");
     rejectExtra(args);
@@ -47,6 +44,8 @@ try {
     await noteCommand(args);
   } else if (command === "outcome") {
     await outcomeCommand(args);
+  } else if (command === "chapter") {
+    await chapterCommand(args);
   } else if (command === "sync-hunk") {
     await syncHunkCommand(args);
   } else if (command === "publish") {
@@ -160,6 +159,19 @@ async function syncHunkCommand(commandArgs: string[]): Promise<void> {
   console.log(`Imported ${imported.length} new inline Hunk note(s) into ${chapter.title}.`);
 }
 
+async function chapterCommand(commandArgs: string[]): Promise<void> {
+  const chapterId = requireOption(commandArgs, "--select");
+  const open = takeFlag(commandArgs, "--open");
+  const sessionPath = await resolveSessionArg(commandArgs);
+  const session = await loadSession(sessionPath);
+  const index = session.chapters.findIndex((chapter) => chapter.id === chapterId);
+  if (index < 0) throw new SessionError(`Unknown chapter: ${chapterId}`);
+  session.currentChapter = index;
+  await saveSession(sessionPath, session);
+  if (open) await openChapterDiff(session, session.chapters[index]!, sessionPath);
+  console.log(`${index + 1}/${session.chapters.length}: ${session.chapters[index]!.title}`);
+}
+
 async function publishCommand(commandArgs: string[]): Promise<void> {
   const confirmed = takeFlag(commandArgs, "--confirm");
   if (!confirmed) throw new SessionError("Publishing is external and irreversible. Re-run with --confirm after reviewing the summary.");
@@ -226,12 +238,12 @@ function printHelp(): void {
 
 Usage:
   cmux-review init --manifest <file> [--session <file>]
-  cmux-review tui [--session <file>]
   cmux-review launch [--session <file>]
   cmux-review install-skill [--skills-dir <directory>]
   cmux-review show [--session <file>]
   cmux-review note --chapter <id> --body <text> [--path <file> --line <n> --side LEFT|RIGHT] [--promote]
   cmux-review outcome --chapter <id> --set pending|approved|concerns|unclear|deferred
+  cmux-review chapter --select <id> [--open] [--session <file>]
   cmux-review sync-hunk --chapter <id> [--session <file>]
   cmux-review draft --file <draft.json> [--session <file>]
   cmux-review summary [--ack] [--session <file>]

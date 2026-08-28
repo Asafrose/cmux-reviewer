@@ -22,4 +22,29 @@ describe("Hunk note import", () => {
     expect(notes).toHaveLength(1);
     expect(notes[0]?.body).toBe("Clarify this statement.");
   });
+
+  test("normalizes the live Hunk 0.18 user-note shape", () => {
+    const notes = parseHunkNotes({
+      comments: [
+        {
+          noteId: "user:123-1",
+          source: "user",
+          filePath: "README.md",
+          newRange: [4, 6],
+          body: "Clarify this section.",
+          createdAt: "2026-08-28T09:22:23.817Z"
+        }
+      ]
+    });
+    expect(notes).toEqual([
+      {
+        id: "hunk:user:123-1",
+        body: "Clarify this section.",
+        createdAt: "2026-08-28T09:22:23.817Z",
+        path: "README.md",
+        line: 6,
+        side: "RIGHT"
+      }
+    ]);
+  });
 });

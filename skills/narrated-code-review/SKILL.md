@@ -19,11 +19,13 @@ Create the chapter plan once before beginning. The first chapter establishes the
 
 Score intent clarity from 0–100. Explain the score, list missing context, and tag evidence as `known`, `inferred`, or `unknown`. Add a compact Mermaid or ASCII diagram automatically when it materially clarifies a relationship or flow.
 
-Read [references/session-protocol.md](references/session-protocol.md) before creating or changing a review session. Initialize the session with `cmux-review init`, then use `cmux-review launch` to open the persistent walkthrough beside the current agent pane.
+Read [references/session-protocol.md](references/session-protocol.md) before creating or changing a review session. Initialize the session with `cmux-review init`, then use `cmux-review launch` to open the current chapter's diff beside the agent pane. Keep narration, questions, the LLM Lens, and approvals in the agent conversation; do not open a second narration TUI.
 
 ## Walk through each chapter
 
 Present the chapter's purpose and evidence without revealing the model's verdict. Put analysis, risks, opinion, and suggested questions in the collapsed LLM Lens so the reviewer decides when to open it.
+
+When advancing, run `cmux-review chapter --select <id> --open` to persist the active chapter and reload the single visual review pane.
 
 Invite both conversational feedback and line-specific diff notes. Record decisions and notes in the session as they occur. A chapter outcome is one of:
 
