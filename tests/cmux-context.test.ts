@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { withWorkspace } from "../src/cmux-context";
+import { selectCmuxWorkspace } from "../src/cmux-context";
 
 describe("cmux workspace resolution", () => {
-  test("uses an inherited workspace when present", () => {
-    const previous = process.env.CMUX_WORKSPACE_ID;
-    process.env.CMUX_WORKSPACE_ID = "workspace:test";
-    try {
-      expect(withWorkspace(["new-pane"])).toEqual(["new-pane", "--workspace", "workspace:test"]);
-    } finally {
-      if (previous === undefined) delete process.env.CMUX_WORKSPACE_ID;
-      else process.env.CMUX_WORKSPACE_ID = previous;
-    }
+  test("prefers caller or focused identity over an inherited workspace", () => {
+    expect(selectCmuxWorkspace({ caller: { workspace_ref: "workspace:caller" }, focused: { workspace_ref: "workspace:focused" } }, "stale-id"))
+      .toBe("workspace:caller");
+    expect(selectCmuxWorkspace({ caller: null, focused: { workspace_ref: "workspace:focused" } }, "stale-id"))
+      .toBe("workspace:focused");
+  });
+
+  test("falls back to the inherited workspace", () => {
+    expect(selectCmuxWorkspace({ caller: null, focused: null }, "workspace:inherited")).toBe("workspace:inherited");
   });
 });
