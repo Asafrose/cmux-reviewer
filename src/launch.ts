@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { resolve } from "node:path";
+import { withWorkspace } from "./cmux-context";
 
 export function launchReviewPane(sessionPath: string, repoRoot: string): string {
-  const paneResult = spawnSync("cmux", ["new-pane", "--type", "terminal", "--direction", "right", "--focus", "false"], {
+  const paneResult = spawnSync("cmux", withWorkspace(["new-pane", "--type", "terminal", "--direction", "right", "--focus", "false"]), {
     encoding: "utf8",
   });
   if (paneResult.status !== 0) throw new Error(paneResult.stderr || "cmux could not create the review pane");

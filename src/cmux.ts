@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import type { Chapter, ReviewSession } from "./types";
 import { hasHunk, openHunkChapter } from "./hunk";
+import { withWorkspace } from "./cmux-context";
 
 export async function openChapterDiff(session: ReviewSession, chapter: Chapter, sessionPath: string): Promise<void> {
   if (hasHunk()) {
@@ -34,7 +35,7 @@ export async function openChapterDiff(session: ReviewSession, chapter: Chapter, 
 }
 
 function launchHunkPane(session: ReviewSession, chapter: Chapter): void {
-  const paneResult = spawnSync("cmux", ["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true"], {
+  const paneResult = spawnSync("cmux", withWorkspace(["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true"]), {
     cwd: session.repoRoot,
     encoding: "utf8",
   });
