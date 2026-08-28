@@ -26,7 +26,7 @@ export async function openChapterDiff(session: ReviewSession, chapter: Chapter, 
 
   const cmux = spawnSync(
     "cmux",
-    ["diff", patchPath, "--title", `Review · ${chapter.title}`, "--layout", "split", "--focus", "true"],
+    withWorkspace(["diff", patchPath, "--title", `Review · ${chapter.title}`, "--layout", "split", "--focus", "true"]),
     { cwd: session.repoRoot, encoding: "utf8" },
   );
   if (cmux.status !== 0) {
@@ -42,13 +42,13 @@ function launchHunkPane(session: ReviewSession, chapter: Chapter): void {
   if (paneResult.status !== 0) throw new Error(paneResult.stderr || "cmux could not create a Hunk pane");
   const pane = paneResult.stdout.match(/pane:\d+/)?.[0];
   if (!pane) throw new Error(`cmux returned an unexpected pane response: ${paneResult.stdout.trim()}`);
-  const surfaces = spawnSync("cmux", ["list-pane-surfaces", "--pane", pane], { encoding: "utf8" });
+  const surfaces = spawnSync("cmux", withWorkspace(["list-pane-surfaces", "--pane", pane]), { encoding: "utf8" });
   const surface = surfaces.stdout.match(/surface:\d+/)?.[0];
   if (surfaces.status !== 0 || !surface) throw new Error(surfaces.stderr || "cmux did not create a terminal surface for Hunk");
   const revision = `${session.pr.baseSha}...${session.pr.headSha}`;
   const args = ["hunk", "diff", revision, "--", ...chapter.files].map(shellQuote).join(" ");
   const command = `cd ${shellQuote(session.repoRoot)} && ${args}\n`;
-  const sent = spawnSync("cmux", ["send", "--surface", surface, command], { encoding: "utf8" });
+  const sent = spawnSync("cmux", withWorkspace(["send", "--surface", surface, command]), { encoding: "utf8" });
   if (sent.status !== 0) throw new Error(sent.stderr || "cmux could not start Hunk");
 }
 
