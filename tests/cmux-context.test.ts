@@ -1,23 +1,34 @@
 import { describe, expect, test } from "bun:test";
 
-import { selectCmuxWorkspace } from "../src/cmux-context";
+import { selectCmuxBinding } from "../src/cmux-context";
 
-describe("cmux workspace resolution", () => {
+describe("cmux agent binding resolution", () => {
   test("prefers caller or focused identity over an inherited workspace", () => {
     expect(
-      selectCmuxWorkspace(
-        { caller: { workspace_ref: "workspace:caller" }, focused: { workspace_ref: "workspace:focused" } },
-        "stale-id",
+      selectCmuxBinding(
+        {
+          caller: { workspace_ref: "workspace:caller", surface_ref: "surface:caller" },
+          focused: { workspace_ref: "workspace:focused", surface_ref: "surface:focused" },
+        },
+        "workspace:stale",
+        "surface:stale",
       ),
-    ).toBe("workspace:caller");
+    ).toEqual({ workspace: "workspace:caller", surface: "surface:caller" });
     expect(
-      selectCmuxWorkspace({ caller: null, focused: { workspace_ref: "workspace:focused" } }, "stale-id"),
-    ).toBe("workspace:focused");
+      selectCmuxBinding({
+        caller: null,
+        focused: { workspace_ref: "workspace:focused", surface_ref: "surface:focused" },
+      }),
+    ).toEqual({ workspace: "workspace:focused", surface: "surface:focused" });
   });
 
   test("falls back to the inherited workspace", () => {
-    expect(selectCmuxWorkspace({ caller: null, focused: null }, "workspace:inherited")).toBe(
-      "workspace:inherited",
-    );
+    expect(
+      selectCmuxBinding({ caller: null, focused: null }, "workspace:inherited", "surface:inherited"),
+    ).toEqual({ workspace: "workspace:inherited", surface: "surface:inherited" });
+  });
+
+  test("does not create a partial binding", () => {
+    expect(selectCmuxBinding({ caller: { workspace_ref: "workspace:caller" } })).toBeUndefined();
   });
 });

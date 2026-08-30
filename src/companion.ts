@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import { stat } from "node:fs/promises";
 
 import {
@@ -13,7 +14,7 @@ import {
 
 import { renderDiagram } from "./diagram";
 import { loadChapterPatches, type FilePatch } from "./diff";
-import { clearRuntime, type CompanionRuntime, writeRuntime } from "./runtime";
+import { clearRuntime, type CompanionRuntime, readRuntime, writeRuntime } from "./runtime";
 import { loadSession, saveSession } from "./session";
 import type { Chapter, ChapterOutcome, ReviewSession } from "./types";
 
@@ -53,6 +54,7 @@ class Companion {
   private lastModified = 0;
   private watcher?: ReturnType<typeof setInterval>;
   private loading = false;
+  private bridgeStatus: "connected" | "disconnected";
   private readonly syntaxStyle = SyntaxStyle.fromStyles({
     keyword: { fg: palette.purple, bold: true },
     string: { fg: "#a7f3d0" },
@@ -68,7 +70,9 @@ class Companion {
     private readonly sessionPath: string,
     private session: ReviewSession,
     private readonly location?: Omit<CompanionRuntime, "pid">,
-  ) {}
+  ) {
+    this.bridgeStatus = location === undefined ? "disconnected" : "connected";
+  }
 
   async start(): Promise<void> {
     if (this.location !== undefined) {
@@ -80,7 +84,9 @@ class Companion {
     this.renderer.on(CliRenderEvents.DESTROY, () => {
       if (this.watcher) clearInterval(this.watcher);
       this.syntaxStyle.destroy();
-      clearRuntime(this.sessionPath, process.pid).catch(() => {});
+      if (this.location !== undefined) {
+        clearRuntime(this.sessionPath, this.location.workspace, process.pid).catch(() => {});
+      }
     });
     this.watcher = setInterval(() => void this.reload(false), 600);
   }
@@ -293,13 +299,14 @@ class Companion {
 
   private buildFooter(): TextRenderable {
     const files = this.patches.length > 1 ? "  ,/. file" : "";
+    const bridge = this.bridgeStatus === "connected" ? "↔ agent connected" : "↔ agent disconnected";
     return new TextRenderable(this.renderer, {
       height: 2,
       paddingLeft: 2,
       paddingTop: 1,
       bg: "#111827",
       fg: palette.muted,
-      content: `[ / ] chapter${files}   j/k story   l LLM Lens   a approve   c concerns   u unclear   d defer   q quit`,
+      content: `${bridge}   [ / ] chapter${files}   j/k story   l LLM Lens   a approve   c concerns   u unclear   d defer   q quit`,
       truncate: true,
     });
   }
@@ -327,6 +334,7 @@ class Companion {
     if (outcome !== undefined) {
       this.chapter.outcome = outcome;
       await this.persist();
+      await this.notifyAgent(outcomeMessage(this.chapter, outcome));
     }
   }
 
@@ -343,6 +351,9 @@ class Companion {
     this.fileIndex = 0;
     this.patches = loadChapterPatches(this.session, this.chapter);
     await this.persist();
+    await this.notifyAgent(
+      `I moved to chapter ${next + 1}/${this.session.chapters.length}, “${this.chapter.title}”. Walk me through it and wait for my response.`,
+    );
   }
 
   private async persist(): Promise<void> {
@@ -350,6 +361,52 @@ class Companion {
     this.lastModified = (await stat(this.sessionPath)).mtimeMs;
     this.render();
   }
+
+  private async notifyAgent(message: string): Promise<void> {
+    const workspace = this.location?.workspace;
+    if (workspace === undefined) {
+      this.bridgeStatus = "disconnected";
+      this.render();
+      return;
+    }
+    const runtime = await readRuntime(this.sessionPath, workspace);
+    if (runtime === undefined) {
+      this.bridgeStatus = "disconnected";
+      this.render();
+      return;
+    }
+    const sent = spawnSync(
+      "cmux",
+      [
+        "send",
+        "--surface",
+        runtime.agentSurface,
+        "--workspace",
+        runtime.agentWorkspace,
+        `Narrated review: ${message}`,
+      ],
+      { encoding: "utf8" },
+    );
+    const submitted =
+      sent.status === 0
+        ? spawnSync(
+            "cmux",
+            ["send-key", "--surface", runtime.agentSurface, "--workspace", runtime.agentWorkspace, "enter"],
+            { encoding: "utf8" },
+          )
+        : undefined;
+    this.bridgeStatus = sent.status === 0 && submitted?.status === 0 ? "connected" : "disconnected";
+    this.render();
+  }
+}
+
+function outcomeMessage(chapter: Chapter, outcome: ChapterOutcome): string {
+  if (outcome === "approved") return `I approve “${chapter.title}”. Please acknowledge it and continue.`;
+  if (outcome === "concerns")
+    return `I marked “${chapter.title}” as concerns. Let's discuss them before moving on.`;
+  if (outcome === "unclear")
+    return `I marked “${chapter.title}” as unclear. Help me understand it before moving on.`;
+  return `I deferred “${chapter.title}”. Please keep it open for us to revisit.`;
 }
 
 function addSection(

@@ -1,6 +1,6 @@
 # Session protocol
 
-`cmux-review` stores the current session at `.cmux-review/sessions/<id>.json` and points `.cmux-review/current` to it. The TUI and agent communicate through this versioned file via CLI commands. Do not scrape pane contents as state.
+`cmux-review` stores the current session at `.cmux-review/sessions/<id>.json` and points `.cmux-review/current` to it. Agent-to-companion state flows through this versioned file via CLI commands. Companion-to-agent actions use the originating cmux surface binding and arrive as messages prefixed with `Narrated review:`. Do not scrape pane contents as state.
 
 ## Create a session
 
@@ -88,7 +88,7 @@ Keep the agent conversation and one OpenTUI companion. Move it to another chapte
 cmux-review chapter --select request-flow
 ```
 
-The companion watches the session and updates in place. Use `--open` to open or focus it when needed. Record conversational or line-specific notes through the CLI so they appear in the companion:
+The companion watches the session and updates in place. Use `--open` to open, focus, or rebind it to the current agent pane. Chapter navigation and outcome keys in the companion send reviewer messages back to the bound agent. Record conversational or line-specific notes through the CLI so they appear in the companion:
 
 ```bash
 cmux-review note --chapter request-flow --body "This should handle the missing value" --path src/api.ts --line 81 --side RIGHT

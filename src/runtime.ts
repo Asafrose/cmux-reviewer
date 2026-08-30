@@ -8,6 +8,8 @@ const RuntimeSchema = z.object({
   pane: z.string().min(1),
   surface: z.string().min(1),
   workspace: z.string().min(1),
+  agentSurface: z.string().min(1),
+  agentWorkspace: z.string().min(1),
 });
 
 export interface CompanionRuntime {
@@ -15,32 +17,38 @@ export interface CompanionRuntime {
   pane: string;
   surface: string;
   workspace: string;
+  agentSurface: string;
+  agentWorkspace: string;
 }
 
-export function runtimePath(sessionPath: string): string {
+export function runtimePath(sessionPath: string, workspace: string): string {
   const id = basename(sessionPath, ".json");
-  return resolve(dirname(sessionPath), "..", "runtime", `${id}.json`);
+  const workspaceKey = workspace.replaceAll(/[^a-zA-Z0-9_-]/gu, "-");
+  return resolve(dirname(sessionPath), "..", "runtime", `${id}-${workspaceKey}.json`);
 }
 
-export async function readRuntime(sessionPath: string): Promise<CompanionRuntime | undefined> {
+export async function readRuntime(
+  sessionPath: string,
+  workspace: string,
+): Promise<CompanionRuntime | undefined> {
   try {
-    return RuntimeSchema.parse(JSON.parse(await readFile(runtimePath(sessionPath), "utf8")));
+    return RuntimeSchema.parse(JSON.parse(await readFile(runtimePath(sessionPath, workspace), "utf8")));
   } catch {
     return undefined;
   }
 }
 
 export async function writeRuntime(sessionPath: string, runtime: CompanionRuntime): Promise<void> {
-  const path = runtimePath(sessionPath);
+  const path = runtimePath(sessionPath, runtime.workspace);
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, `${JSON.stringify(RuntimeSchema.parse(runtime), null, 2)}\n`, "utf8");
 }
 
-export async function clearRuntime(sessionPath: string, pid: number): Promise<void> {
-  const runtime = await readRuntime(sessionPath);
+export async function clearRuntime(sessionPath: string, workspace: string, pid: number): Promise<void> {
+  const runtime = await readRuntime(sessionPath, workspace);
   if (runtime?.pid !== pid) return;
   try {
-    await unlink(runtimePath(sessionPath));
+    await unlink(runtimePath(sessionPath, workspace));
   } catch {
     // The runtime marker may already have been removed by a stale-session cleanup.
   }

@@ -8,6 +8,7 @@ A persistent, chapter-based GitHub code-review walkthrough for cmux. The agent r
 - Intent clarity score with known, inferred, and unknown evidence
 - Small, logically ordered chapters with explicit outcomes
 - Responsive OpenTUI layout with rendered diagrams and syntax-highlighted diffs
+- Bidirectional cmux bridge: agent changes update the companion, and companion actions message the agent
 - Optional LLM Lens, conversation notes, and exact chapter outcomes
 - Chapter-scoped file navigation rather than a full-PR diff dump
 - Exact editable review draft and guarded GitHub publication
@@ -43,7 +44,7 @@ cmux-review publish --confirm
 
 `publish` submits one GitHub pull-request review containing the selected review event and all inline comments. Every `gh` invocation is executed without `GITHUB_TOKEN`, allowing the GitHub CLI to use its configured credential store.
 
-Inside the companion, use `[`/`]` for chapters, `,`/`.` for files, `j`/`k` to scroll the story, and `l` to reveal the LLM Lens. `a`, `c`, `u`, and `d` record an explicit chapter outcome.
+Inside the companion, use `[`/`]` for chapters, `,`/`.` for files, `j`/`k` to scroll the story, and `l` to reveal the LLM Lens. `a`, `c`, `u`, and `d` record an explicit chapter outcome. Chapter navigation and outcomes are sent to the originating agent pane as user messages, so the narration continues without switching panes manually.
 
 ## Development checks
 

@@ -1,27 +1,35 @@
 import { spawnSync } from "node:child_process";
 
-import { resolveCmuxWorkspace, withWorkspace } from "./cmux-context";
-import { readRuntime, processIsAlive } from "./runtime";
+import { resolveCmuxBinding } from "./cmux-context";
+import { readRuntime, processIsAlive, writeRuntime } from "./runtime";
 import type { ReviewSession } from "./types";
 
 export async function launchCompanion(session: ReviewSession, sessionPath: string): Promise<string> {
-  const existing = await readRuntime(sessionPath);
+  const agent = resolveCmuxBinding();
+  if (agent === undefined) {
+    throw new Error("cmux-review launch must run from the agent's cmux terminal");
+  }
+  const existing = await readRuntime(sessionPath, agent.workspace);
   if (existing !== undefined && processIsAlive(existing.pid)) {
     const focused = spawnSync(
       "cmux",
       ["focus-pane", "--pane", existing.pane, "--workspace", existing.workspace],
       { encoding: "utf8" },
     );
-    if (focused.status === 0) return existing.surface;
+    if (focused.status === 0) {
+      await writeRuntime(sessionPath, {
+        ...existing,
+        agentSurface: agent.surface,
+        agentWorkspace: agent.workspace,
+      });
+      return existing.surface;
+    }
   }
 
-  const workspace = resolveCmuxWorkspace();
-  if (workspace === undefined || workspace === "") {
-    throw new Error("cmux-review launch must run inside a cmux workspace");
-  }
+  const workspace = agent.workspace;
   const paneResult = spawnSync(
     "cmux",
-    withWorkspace(["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true"]),
+    ["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true", "--workspace", workspace],
     { cwd: session.repoRoot, encoding: "utf8" },
   );
   if (paneResult.status !== 0)
@@ -38,7 +46,7 @@ export async function launchCompanion(session: ReviewSession, sessionPath: strin
     throw new Error(nonEmpty(surfaces.stderr, "cmux did not create a terminal surface for the companion"));
   }
 
-  const command = `cd ${shellQuote(session.repoRoot)} && cmux-review companion --session ${shellQuote(sessionPath)} --pane ${shellQuote(pane)} --surface ${shellQuote(surface)} --workspace ${shellQuote(workspace)}\n`;
+  const command = `cd ${shellQuote(session.repoRoot)} && cmux-review companion --session ${shellQuote(sessionPath)} --pane ${shellQuote(pane)} --surface ${shellQuote(surface)} --workspace ${shellQuote(workspace)} --agent-surface ${shellQuote(agent.surface)} --agent-workspace ${shellQuote(agent.workspace)}\n`;
   const sent = spawnSync("cmux", ["send", "--surface", surface, "--workspace", workspace, command], {
     encoding: "utf8",
   });

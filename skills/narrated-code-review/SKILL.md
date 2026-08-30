@@ -21,6 +21,8 @@ Score intent clarity from 0–100. Explain the score, list missing context, and 
 
 Read [references/session-protocol.md](references/session-protocol.md) before creating or changing a review session. Initialize the session with `cmux-review init`, then use `cmux-review launch` to open the single OpenTUI companion beside the agent pane. The companion owns the visual chapter summary, rendered diagram, LLM Lens, and chapter-scoped diff. Keep the collaborative conversation and questions in the agent pane. Do not open Hunk, a cmux diff surface, markdown viewer, or another narration TUI.
 
+Treat messages beginning with `Narrated review:` as direct reviewer interaction from the bound companion pane. Respond naturally and continue the same walkthrough; do not ask the reviewer to repeat the action in the agent pane. Agent-side CLI session changes flow back into the companion automatically.
+
 ## Walk through each chapter
 
 Briefly introduce the chapter in conversation, then let the companion present its purpose and evidence without revealing the model's verdict. Put analysis, risks, opinion, and suggested questions in the collapsed LLM Lens so the reviewer decides when to open it with `l`.

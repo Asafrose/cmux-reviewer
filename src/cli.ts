@@ -96,8 +96,10 @@ async function companionCommand(commandArgs: string[]): Promise<void> {
   const pane = requireOption(commandArgs, "--pane");
   const surface = requireOption(commandArgs, "--surface");
   const workspace = requireOption(commandArgs, "--workspace");
+  const agentSurface = requireOption(commandArgs, "--agent-surface");
+  const agentWorkspace = requireOption(commandArgs, "--agent-workspace");
   const sessionPath = await resolveSessionArg(commandArgs);
-  await runCompanion(sessionPath, { pane, surface, workspace });
+  await runCompanion(sessionPath, { pane, surface, workspace, agentSurface, agentWorkspace });
 }
 
 async function summaryCommand(commandArgs: string[]): Promise<void> {
@@ -285,7 +287,7 @@ function printHelp(): void {
 Usage:
   cmux-review init --manifest <file> [--session <file>]
   cmux-review launch [--session <file>]
-  cmux-review companion --session <file> --pane <ref> --surface <ref> --workspace <ref>
+  cmux-review companion --session <file> --pane <ref> --surface <ref> --workspace <ref> --agent-surface <ref> --agent-workspace <ref>
   cmux-review install-skill [--skills-dir <directory>]
   cmux-review show [--session <file>]
   cmux-review note --chapter <id> --body <text> [--path <file> --line <n> --side LEFT|RIGHT] [--promote]
