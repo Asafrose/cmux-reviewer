@@ -1,0 +1,4 @@
+interface:
+  display_name: "Narrated Code Review"
+  short_description: "Walk through a GitHub PR as a guided story"
+  default_prompt: "Use $narrated-code-review to guide me through this GitHub pull request chapter by chapter."

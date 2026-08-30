@@ -1,0 +1,29 @@
+{
+  "name": "cmux-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "bin": {
+    "cmux-review": "./src/cli.ts"
+  },
+  "type": "module",
+  "scripts": {
+    "check": "bun run fmt:check && bun run lint && bun run typecheck && bun test",
+    "fmt": "oxfmt .",
+    "fmt:check": "oxfmt --check .",
+    "lint": "oxlint --type-aware --deny-warnings --report-unused-disable-directives . && bun run scripts/no-type-assertions.ts",
+    "start": "bun run src/cli.ts",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.5.9",
+    "zod": "^4.5.4"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.9",
+    "oxfmt": "^0.65.0",
+    "oxlint": "^1.80.0",
+    "oxlint-tsgolint": "^7.0.2001",
+    "typescript": "^5.9.2"
+  }
+}
