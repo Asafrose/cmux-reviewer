@@ -65,7 +65,7 @@ Required manifest shape:
 }
 ```
 
-Every chapter needs a stable kebab-case `id`. `files` contains only the repository-relative paths relevant to that chapter. The companion presents one selected file at a time. An empty file list makes a story-only chapter; it never falls back to the complete PR diff. `diagram` is optional and accepts Mermaid flowchart or ASCII source for terminal rendering.
+Every chapter needs a stable kebab-case `id`. `files` contains only the repository-relative paths relevant to that chapter. The companion renders every file diff in the chapter's single scroll. Evidence order defines the walkthrough order; put related repository paths in each evidence item's `source` so its explanation appears immediately before those diffs. Unreferenced chapter files appear afterward. An empty file list makes a story-only chapter; it never falls back to the complete PR diff. `diagram` is optional and accepts Mermaid flowchart or ASCII source for terminal rendering.
 
 The base and head commits must exist locally for chapter diffs. Fetch missing commits without changing the reviewer's checked-out branch.
 

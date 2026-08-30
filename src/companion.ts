@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { stat } from "node:fs/promises";
+import { basename } from "node:path";
 
 import {
   BoxRenderable,
@@ -49,7 +50,6 @@ export async function runCompanion(
 
 class Companion {
   private patches: FilePatch[] = [];
-  private fileIndex = 0;
   private story?: ScrollBoxRenderable;
   private lastModified = 0;
   private watcher?: ReturnType<typeof setInterval>;
@@ -100,9 +100,8 @@ class Companion {
       const previousChapter = this.session?.chapters[this.session.currentChapter]?.id;
       this.session = await loadSession(this.sessionPath);
       this.lastModified = modified;
-      if (force || previousChapter !== this.chapter.id) this.fileIndex = 0;
+      if (previousChapter !== this.chapter.id) this.story?.scrollTo(0);
       this.patches = loadChapterPatches(this.session, this.chapter);
-      this.fileIndex = Math.min(this.fileIndex, Math.max(0, this.patches.length - 1));
       this.render();
     } finally {
       this.loading = false;
@@ -116,6 +115,7 @@ class Companion {
   }
 
   private render(): void {
+    const previousScroll = this.story?.scrollTop ?? 0;
     for (const child of this.renderer.root.getChildren()) {
       this.renderer.root.remove(child);
       child.destroyRecursively();
@@ -129,21 +129,17 @@ class Companion {
       backgroundColor: palette.bg,
     });
     root.add(this.buildHeader());
-    const storyOnly = this.patches.length === 0;
-    const compact = this.renderer.terminalWidth < 120 || storyOnly;
     const body = new BoxRenderable(this.renderer, {
-      flexDirection: compact ? "column" : "row",
+      flexDirection: "column",
       flexGrow: 1,
-      columnGap: compact ? 0 : 1,
-      rowGap: compact ? 1 : 0,
       paddingX: 1,
     });
-    this.story = this.buildStory(compact, storyOnly);
+    this.story = this.buildWalkthrough();
     body.add(this.story);
-    if (!storyOnly) body.add(this.buildDiff());
     root.add(body);
     root.add(this.buildFooter());
     this.renderer.root.add(root);
+    this.story.scrollTop = previousScroll;
     this.renderer.requestRender();
   }
 
@@ -178,15 +174,15 @@ class Companion {
     return header;
   }
 
-  private buildStory(compact: boolean, storyOnly: boolean): ScrollBoxRenderable {
+  private buildWalkthrough(): ScrollBoxRenderable {
     const story = new ScrollBoxRenderable(this.renderer, {
-      width: compact ? "100%" : "38%",
-      height: storyOnly ? "100%" : compact ? "42%" : "100%",
+      width: "100%",
+      height: "100%",
       flexShrink: 0,
       border: true,
       borderColor: palette.border,
       focusedBorderColor: palette.cyan,
-      title: ` Chapter ${this.session.currentChapter + 1} · Story `,
+      title: ` Chapter ${this.session.currentChapter + 1} · Walkthrough `,
       titleColor: palette.cyan,
       padding: 1,
       scrollY: true,
@@ -214,16 +210,31 @@ class Companion {
       story.add(panel);
     }
 
-    const evidence =
-      this.chapter.evidence.length > 0
-        ? this.chapter.evidence
-            .map(
-              (item) =>
-                `${evidenceMark(item.confidence)} ${item.confidence.toUpperCase()} · ${item.detail}\n  ${item.source}`,
-            )
-            .join("\n\n")
-        : "No evidence recorded for this chapter.";
-    addSection(story, this.renderer, "Evidence", evidence, palette.muted);
+    const renderedPaths = new Set<string>();
+    if (this.chapter.evidence.length === 0) {
+      addSection(story, this.renderer, "Evidence", "No evidence recorded for this chapter.", palette.muted);
+    }
+    for (const evidence of this.chapter.evidence) {
+      addSection(
+        story,
+        this.renderer,
+        `${evidenceMark(evidence.confidence)} ${evidence.confidence.toUpperCase()}`,
+        `${evidence.detail}\n${evidence.source}`,
+        evidenceColor(evidence.confidence),
+      );
+      const referencedPatches = this.patches
+        .map((patch) => ({ patch, sourceIndex: evidencePathIndex(evidence.source, patch.path) }))
+        .filter(({ patch, sourceIndex }) => !renderedPaths.has(patch.path) && sourceIndex >= 0)
+        .toSorted((left, right) => left.sourceIndex - right.sourceIndex);
+      for (const { patch } of referencedPatches) {
+        story.add(this.buildPatchCard(patch));
+        renderedPaths.add(patch.path);
+      }
+    }
+
+    for (const patch of this.patches) {
+      if (!renderedPaths.has(patch.path)) story.add(this.buildPatchCard(patch));
+    }
 
     const lens = this.chapter.lensRevealed
       ? formatLens(this.chapter)
@@ -249,38 +260,24 @@ class Companion {
     return story;
   }
 
-  private buildDiff(): BoxRenderable {
-    const current = this.patches[this.fileIndex];
-    const title =
-      current === undefined
-        ? " Code · no files in this chapter "
-        : ` Code · ${this.fileIndex + 1}/${this.patches.length} · ${current.path} `;
+  private buildPatchCard(patch: FilePatch): BoxRenderable {
+    const diffHeight = Math.max(8, patch.patch.split("\n").length + 2);
     const panel = new BoxRenderable(this.renderer, {
-      flexGrow: 1,
-      height: "100%",
+      height: diffHeight + 2,
       flexDirection: "column",
       border: true,
       borderColor: palette.border,
-      title,
+      title: ` Code · ${patch.path} `,
       titleColor: palette.green,
       padding: 1,
+      marginTop: 1,
     });
-    if (current === undefined) {
-      panel.add(
-        new TextRenderable(this.renderer, {
-          content: "This is a story-only chapter.\n\nUse [ / ] to move between chapters.",
-          fg: palette.muted,
-          wrapMode: "word",
-        }),
-      );
-      return panel;
-    }
     panel.add(
       new DiffRenderable(this.renderer, {
-        diff: current.patch,
-        filetype: current.filetype,
+        diff: patch.patch,
+        filetype: patch.filetype,
         syntaxStyle: this.syntaxStyle,
-        view: this.renderer.terminalWidth >= 150 ? "split" : "unified",
+        view: "unified",
         flexGrow: 1,
         wrapMode: "none",
         showLineNumbers: true,
@@ -298,7 +295,6 @@ class Companion {
   }
 
   private buildFooter(): TextRenderable {
-    const files = this.patches.length > 1 ? "  ,/. file" : "";
     const bridge = this.bridgeStatus === "connected" ? "↔ agent connected" : "↔ agent disconnected";
     return new TextRenderable(this.renderer, {
       height: 2,
@@ -306,17 +302,15 @@ class Companion {
       paddingTop: 1,
       bg: "#111827",
       fg: palette.muted,
-      content: `${bridge}   [ / ] chapter${files}   j/k story   l LLM Lens   a approve   c concerns   u unclear   d defer   q quit`,
+      content: `${bridge}   [ / ] chapter   j/k scroll   l LLM Lens   a approve   c concerns   u unclear   d defer   q quit`,
       truncate: true,
     });
   }
 
   private async onKey(name: string, ctrl: boolean): Promise<void> {
-    if (name === "q" || (ctrl && name === "c")) return this.renderer.destroy();
+    if (name === "q" || (ctrl && name === "c")) return this.quit();
     if (name === "j" || name === "down") return this.story?.scrollBy(2);
     if (name === "k" || name === "up") return this.story?.scrollBy(-2);
-    if (name === ",") return this.changeFile(-1);
-    if (name === ".") return this.changeFile(1);
     if (name === "[") return void this.changeChapter(-1);
     if (name === "]") return void this.changeChapter(1);
     if (name === "l") {
@@ -338,17 +332,21 @@ class Companion {
     }
   }
 
-  private changeFile(delta: number): void {
-    if (this.patches.length < 2) return;
-    this.fileIndex = (this.fileIndex + delta + this.patches.length) % this.patches.length;
-    this.render();
+  private quit(): void {
+    this.renderer.destroy();
+    if (this.location === undefined) return;
+    spawnSync(
+      "cmux",
+      ["close-surface", "--surface", this.location.surface, "--workspace", this.location.workspace],
+      { encoding: "utf8" },
+    );
   }
 
   private async changeChapter(delta: number): Promise<void> {
     const next = this.session.currentChapter + delta;
     if (next < 0 || next >= this.session.chapters.length) return;
     this.session.currentChapter = next;
-    this.fileIndex = 0;
+    this.story?.scrollTo(0);
     this.patches = loadChapterPatches(this.session, this.chapter);
     await this.persist();
     await this.notifyAgent(
@@ -451,6 +449,19 @@ function formatLens(chapter: Chapter): string {
 
 function evidenceMark(confidence: string): string {
   return confidence === "known" ? "●" : confidence === "inferred" ? "◐" : "○";
+}
+
+function evidenceColor(confidence: string): string {
+  if (confidence === "known") return palette.blue;
+  if (confidence === "inferred") return palette.yellow;
+  return palette.muted;
+}
+
+function evidencePathIndex(source: string, path: string): number {
+  const normalizedSource = source.toLowerCase();
+  const fullPathIndex = normalizedSource.indexOf(path.toLowerCase());
+  if (fullPathIndex >= 0) return fullPathIndex;
+  return normalizedSource.indexOf(basename(path).toLowerCase());
 }
 
 function progress(index: number, total: number): string {
