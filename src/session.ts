@@ -1,13 +1,133 @@
 import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import {
-  SESSION_VERSION,
-  type Chapter,
-  type ReviewDraft,
-  type ReviewSession,
-} from "./types";
+
+import { z } from "zod";
+
+import { SESSION_VERSION, type ReviewDraft, type ReviewSession } from "./types";
 
 export class SessionError extends Error {}
+
+const NonEmptyString = z.string().trim().min(1);
+const DiffSideSchema = z.enum(["LEFT", "RIGHT"]);
+const OutcomeSchema = z.enum(["pending", "approved", "concerns", "unclear", "deferred"]);
+const ReviewEventSchema = z.enum(["APPROVE", "REQUEST_CHANGES", "COMMENT"]);
+const EvidenceSchema = z.object({
+  source: NonEmptyString,
+  detail: NonEmptyString,
+  url: NonEmptyString.optional(),
+  confidence: z.enum(["known", "inferred", "unknown"]),
+});
+const NoteSchema = z.object({
+  id: NonEmptyString,
+  body: NonEmptyString,
+  createdAt: NonEmptyString,
+  path: NonEmptyString.optional(),
+  line: z.number().int().positive().optional(),
+  side: DiffSideSchema.optional(),
+  promoted: z.boolean().optional(),
+});
+const FindingSchema = z.object({
+  id: NonEmptyString,
+  body: NonEmptyString,
+  status: z.enum(["observation", "concern", "confirmed", "publishable", "dismissed"]),
+  path: NonEmptyString.optional(),
+  line: z.number().int().positive().optional(),
+  side: DiffSideSchema.optional(),
+  startLine: z.number().int().positive().optional(),
+  startSide: DiffSideSchema.optional(),
+});
+const LensSchema = z.object({
+  summary: NonEmptyString,
+  opinion: NonEmptyString.optional(),
+  risks: z.array(z.string()),
+  questions: z.array(z.string()),
+});
+const ChapterSchema = z.object({
+  id: NonEmptyString,
+  title: NonEmptyString,
+  purpose: NonEmptyString,
+  files: z.array(z.string()),
+  evidence: z.array(EvidenceSchema),
+  lens: LensSchema.optional(),
+  lensRevealed: z.boolean(),
+  diagram: z.string().optional(),
+  notes: z.array(NoteSchema),
+  findings: z.array(FindingSchema),
+  outcome: OutcomeSchema,
+});
+const PrSchema = z.object({
+  owner: NonEmptyString,
+  repo: NonEmptyString,
+  number: z.number().int().positive(),
+  title: NonEmptyString,
+  url: NonEmptyString,
+  baseSha: NonEmptyString,
+  headSha: NonEmptyString,
+});
+const IntentSchema = z.object({
+  goal: NonEmptyString,
+  architecture: NonEmptyString,
+  tradeoffs: z.array(z.string()),
+  inScope: z.array(z.string()),
+  outOfScope: z.array(z.string()),
+  clarity: z.object({
+    score: z.number().min(0).max(100),
+    rationale: NonEmptyString,
+    unknowns: z.array(z.string()),
+  }),
+});
+const DraftSchema = z.object({
+  event: ReviewEventSchema,
+  body: z.string(),
+  comments: z.array(
+    z.object({
+      body: NonEmptyString,
+      path: NonEmptyString,
+      line: z.number().int().positive(),
+      side: DiffSideSchema,
+      startLine: z.number().int().positive().optional(),
+      startSide: DiffSideSchema.optional(),
+      chapterId: NonEmptyString.optional(),
+    }),
+  ),
+});
+const SessionSchema = z
+  .object({
+    version: z.literal(SESSION_VERSION),
+    id: NonEmptyString,
+    createdAt: NonEmptyString,
+    updatedAt: NonEmptyString,
+    repoRoot: NonEmptyString,
+    pr: PrSchema,
+    intent: IntentSchema,
+    chapters: z.array(ChapterSchema).min(1),
+    currentChapter: z.number().int().nonnegative(),
+    draft: DraftSchema.optional(),
+    draftUpdatedAt: NonEmptyString.optional(),
+    draftReviewedAt: NonEmptyString.optional(),
+    publishedAt: NonEmptyString.optional(),
+    publishedUrl: NonEmptyString.optional(),
+  })
+  .superRefine((session, context) => {
+    if (session.currentChapter >= session.chapters.length) {
+      context.addIssue({ code: "custom", path: ["currentChapter"], message: "outside the chapter list" });
+    }
+    const ids = new Set(session.chapters.map((chapter) => chapter.id));
+    if (ids.size !== session.chapters.length) {
+      context.addIssue({ code: "custom", path: ["chapters"], message: "chapter ids must be unique" });
+    }
+  });
+const ManifestSchema = z.object({
+  id: NonEmptyString.optional(),
+  createdAt: NonEmptyString.optional(),
+  repoRoot: NonEmptyString.optional(),
+  pr: PrSchema,
+  intent: IntentSchema,
+  chapters: z.array(ChapterSchema).min(1),
+  currentChapter: z.number().int().nonnegative().optional(),
+});
+
+export type ReviewManifest = z.output<typeof ManifestSchema>;
 
 export function defaultSessionPath(repoRoot: string, id: string): string {
   return resolve(repoRoot, ".cmux-review", "sessions", `${id}.json`);
@@ -20,14 +140,12 @@ export async function loadSession(path: string): Promise<ReviewSession> {
   } catch (error) {
     throw new SessionError(`Cannot read review session at ${path}: ${String(error)}`);
   }
-
-  let value: unknown;
   try {
-    value = JSON.parse(raw);
-  } catch {
-    throw new SessionError(`Review session is not valid JSON: ${path}`);
+    return validateSession(JSON.parse(raw));
+  } catch (error) {
+    if (error instanceof SessionError) throw error;
+    throw new SessionError(`Review session is invalid at ${path}: ${formatValidationError(error)}`);
   }
-  return validateSession(value);
 }
 
 export async function saveSession(path: string, session: ReviewSession): Promise<void> {
@@ -40,101 +158,23 @@ export async function saveSession(path: string, session: ReviewSession): Promise
 }
 
 export function validateSession(value: unknown): ReviewSession {
-  if (!isRecord(value)) throw new SessionError("Session must be a JSON object");
-  if (value.version !== SESSION_VERSION) {
-    throw new SessionError(`Unsupported session version: ${String(value.version)}`);
-  }
-  for (const key of ["id", "createdAt", "updatedAt", "repoRoot"] as const) {
-    requireString(value[key], key);
-  }
-  if (!isRecord(value.pr)) throw new SessionError("pr must be an object");
-  for (const key of ["owner", "repo", "title", "url", "baseSha", "headSha"] as const) {
-    requireString(value.pr[key], `pr.${key}`);
-  }
-  if (!Number.isInteger(value.pr.number) || Number(value.pr.number) < 1) {
-    throw new SessionError("pr.number must be a positive integer");
-  }
-  if (!isRecord(value.intent) || !isRecord(value.intent.clarity)) {
-    throw new SessionError("intent and intent.clarity must be objects");
-  }
-  for (const key of ["goal", "architecture"] as const) {
-    requireString(value.intent[key], `intent.${key}`);
-  }
-  for (const key of ["tradeoffs", "inScope", "outOfScope"] as const) {
-    requireStringArray(value.intent[key], `intent.${key}`);
-  }
-  requireString(value.intent.clarity.rationale, "intent.clarity.rationale");
-  requireStringArray(value.intent.clarity.unknowns, "intent.clarity.unknowns");
-  const score = value.intent.clarity.score;
-  if (typeof score !== "number" || score < 0 || score > 100) {
-    throw new SessionError("intent.clarity.score must be between 0 and 100");
-  }
-  if (!Array.isArray(value.chapters) || value.chapters.length === 0) {
-    throw new SessionError("chapters must contain at least one chapter");
-  }
-  const ids = new Set<string>();
-  for (const [index, chapter] of value.chapters.entries()) {
-    validateChapter(chapter, index);
-    if (ids.has(chapter.id)) throw new SessionError(`Duplicate chapter id: ${chapter.id}`);
-    ids.add(chapter.id);
-  }
-  if (!Number.isInteger(value.currentChapter) || Number(value.currentChapter) < 0 || Number(value.currentChapter) >= value.chapters.length) {
-    throw new SessionError("currentChapter is outside the chapter list");
-  }
-  if (value.draft !== undefined) validateDraft(value.draft);
-  return value as unknown as ReviewSession;
+  return parseWithSchema(SessionSchema, value, "Session");
+}
+
+export function validateManifest(value: unknown): ReviewManifest {
+  return parseWithSchema(ManifestSchema, value, "Manifest");
 }
 
 export function validateDraft(value: unknown): ReviewDraft {
-  if (!isRecord(value)) throw new SessionError("draft must be an object");
-  if (!(["APPROVE", "REQUEST_CHANGES", "COMMENT"] as unknown[]).includes(value.event)) {
-    throw new SessionError("draft.event must be APPROVE, REQUEST_CHANGES, or COMMENT");
-  }
-  requireString(value.body, "draft.body");
-  if (!Array.isArray(value.comments)) throw new SessionError("draft.comments must be an array");
-  for (const [index, comment] of value.comments.entries()) {
-    if (!isRecord(comment)) throw new SessionError(`draft.comments[${index}] must be an object`);
-    requireString(comment.body, `draft.comments[${index}].body`);
-    requireString(comment.path, `draft.comments[${index}].path`);
-    if (!Number.isInteger(comment.line) || Number(comment.line) < 1) {
-      throw new SessionError(`draft.comments[${index}].line must be positive`);
-    }
-    if (comment.side !== "LEFT" && comment.side !== "RIGHT") {
-      throw new SessionError(`draft.comments[${index}].side must be LEFT or RIGHT`);
-    }
-  }
-  return value as unknown as ReviewDraft;
+  return parseWithSchema(DraftSchema, value, "Draft");
 }
 
-function validateChapter(value: unknown, index: number): asserts value is Chapter {
-  if (!isRecord(value)) throw new SessionError(`chapters[${index}] must be an object`);
-  for (const key of ["id", "title", "purpose"] as const) {
-    requireString(value[key], `chapters[${index}].${key}`);
-  }
-  for (const key of ["files", "evidence", "notes", "findings"] as const) {
-    if (!Array.isArray(value[key])) throw new SessionError(`chapters[${index}].${key} must be an array`);
-  }
-  requireStringArray(value.files, `chapters[${index}].files`);
-  if (typeof value.lensRevealed !== "boolean") {
-    throw new SessionError(`chapters[${index}].lensRevealed must be boolean`);
-  }
-  if (!("pending approved concerns unclear deferred".split(" ").includes(String(value.outcome)))) {
-    throw new SessionError(`chapters[${index}].outcome is invalid`);
-  }
+function parseWithSchema<T>(schema: z.ZodType<T>, value: unknown, name: string): T {
+  const result = schema.safeParse(value);
+  if (!result.success) throw new SessionError(`${name} is invalid: ${z.prettifyError(result.error)}`);
+  return result.data;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function requireString(value: unknown, path: string): asserts value is string {
-  if (typeof value !== "string" || value.trim() === "") {
-    throw new SessionError(`${path} must be a non-empty string`);
-  }
-}
-
-function requireStringArray(value: unknown, path: string): asserts value is string[] {
-  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
-    throw new SessionError(`${path} must be an array of strings`);
-  }
+function formatValidationError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

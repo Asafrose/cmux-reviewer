@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { parseHunkNotes } from "../src/hunk";
 
 describe("Hunk note import", () => {
@@ -32,9 +33,9 @@ describe("Hunk note import", () => {
           filePath: "README.md",
           newRange: [4, 6],
           body: "Clarify this section.",
-          createdAt: "2026-08-28T09:22:23.817Z"
-        }
-      ]
+          createdAt: "2026-08-28T09:22:23.817Z",
+        },
+      ],
     });
     expect(notes).toEqual([
       {
@@ -43,8 +44,8 @@ describe("Hunk note import", () => {
         createdAt: "2026-08-28T09:22:23.817Z",
         path: "README.md",
         line: 6,
-        side: "RIGHT"
-      }
+        side: "RIGHT",
+      },
     ]);
   });
 });

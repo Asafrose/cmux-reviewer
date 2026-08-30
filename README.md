@@ -1,14 +1,15 @@
 # cmux-reviewer
 
-A persistent, chapter-based GitHub code-review walkthrough for cmux. The agent narrates in one pane while Hunk or cmux shows the current chapter in one adjacent review pane. It separates understanding a change from judging it, keeps the model's opinion behind an optional **LLM Lens**, and requires an exact summary checkpoint before publishing review comments.
+A persistent, chapter-based GitHub code-review walkthrough for cmux. The agent remains conversational in one pane while one OpenTUI companion presents the current chapter, diagram, and chapter-scoped diff together. It separates understanding a change from judging it, keeps the model's opinion behind an optional **LLM Lens**, and requires an exact summary checkpoint before publishing review comments.
 
 ## Current MVP
 
 - Versioned JSON review sessions that survive terminal and cmux restarts
 - Intent clarity score with known, inferred, and unknown evidence
 - Small, logically ordered chapters with explicit outcomes
-- Optional LLM Lens, automatic diagrams, conversation notes, and inline notes
-- Chapter-scoped Hunk diffs with inline-note sync; cmux native diff is the fallback
+- Responsive OpenTUI layout with rendered diagrams and syntax-highlighted diffs
+- Optional LLM Lens, conversation notes, and exact chapter outcomes
+- Chapter-scoped file navigation rather than a full-PR diff dump
 - Exact editable review draft and guarded GitHub publication
 
 ## Run locally
@@ -20,15 +21,14 @@ cmux-review init --manifest /path/to/review-manifest.json
 cmux-review launch
 ```
 
-The runtime has no package dependencies. Run `bun install` only when you want the optional TypeScript development tooling.
+Run `bun install` once. The companion uses OpenTUI, and persisted JSON is validated with Zod.
 
 The narrated workflow is defined in [`skills/narrated-code-review/SKILL.md`](skills/narrated-code-review/SKILL.md). The manifest and draft formats are documented in [`skills/narrated-code-review/references/session-protocol.md`](skills/narrated-code-review/references/session-protocol.md).
 
-The agent advances the single review pane chapter by chapter:
+The agent and companion share the persisted session. The companion updates in place as the agent advances:
 
 ```bash
 cmux-review chapter --select request-flow --open
-cmux-review sync-hunk --chapter request-flow
 cmux-review outcome --chapter request-flow --set approved
 ```
 
@@ -43,4 +43,13 @@ cmux-review publish --confirm
 
 `publish` submits one GitHub pull-request review containing the selected review event and all inline comments. Every `gh` invocation is executed without `GITHUB_TOKEN`, allowing the GitHub CLI to use its configured credential store.
 
-When [Hunk](https://github.com/modem-dev/hunk) is installed, `launch` opens or reloads a live Hunk chapter diff in one cmux pane. Add comments directly in Hunk, then let the agent import them with `sync-hunk`. Without Hunk, the same command opens cmux's native diff surface.
+Inside the companion, use `[`/`]` for chapters, `,`/`.` for files, `j`/`k` to scroll the story, and `l` to reveal the LLM Lens. `a`, `c`, `u`, and `d` record an explicit chapter outcome.
+
+## Development checks
+
+```bash
+bun run fmt
+bun run check
+```
+
+`check` runs Oxfmt, strict type-aware Oxlint, an AST-level ban on TypeScript assertions, `tsc`, and the test suite.

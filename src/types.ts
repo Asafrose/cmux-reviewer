@@ -1,11 +1,6 @@
-export const SESSION_VERSION = 1 as const;
+export const SESSION_VERSION = 1;
 
-export type ChapterOutcome =
-  | "pending"
-  | "approved"
-  | "concerns"
-  | "unclear"
-  | "deferred";
+export type ChapterOutcome = "pending" | "approved" | "concerns" | "unclear" | "deferred";
 
 export type ReviewEvent = "APPROVE" | "REQUEST_CHANGES" | "COMMENT";
 export type DiffSide = "LEFT" | "RIGHT";

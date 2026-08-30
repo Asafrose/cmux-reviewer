@@ -3,6 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 
+import { validateSession } from "../src/session";
+
 const temporaryPaths: string[] = [];
 afterEach(async () => {
   await Promise.all(temporaryPaths.splice(0).map((path) => rm(path, { recursive: true, force: true })));
@@ -75,9 +77,9 @@ describe("CLI workflow", () => {
 
     const shown = run(repo, ["show"]);
     expect(shown.exitCode).toBe(0);
-    const session = JSON.parse(shown.stdout.toString());
-    expect(session.chapters[0].notes[0].body).toBe("This is clear.");
-    expect(session.chapters[0].outcome).toBe("approved");
+    const session = validateSession(JSON.parse(shown.stdout.toString()));
+    expect(session.chapters.at(0)?.notes.at(0)?.body).toBe("This is clear.");
+    expect(session.chapters.at(0)?.outcome).toBe("approved");
     expect(session.draftReviewedAt).toBeString();
   });
 });

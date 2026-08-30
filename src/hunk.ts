@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+
 import type { Chapter, ReviewNote, ReviewSession } from "./types";
 
 export function hasHunk(): boolean {
@@ -44,20 +45,32 @@ export function parseHunkNotes(value: unknown): ReviewNote[] {
   const notes: ReviewNote[] = [];
   for (const item of source) {
     if (!isRecord(item)) continue;
-    const path = stringValue(item.filePath) || stringValue(item.file) || stringValue(item.path);
-    const newLine = numberValue(item.newLine) || numberValue(item.new_line) || rangeEnd(item.newRange) || rangeEnd(item.new_range);
-    const oldLine = numberValue(item.oldLine) || numberValue(item.old_line) || rangeEnd(item.oldRange) || rangeEnd(item.old_range);
-    const body = stringValue(item.summary) || stringValue(item.body) || stringValue(item.rationale);
-    const line = newLine || oldLine;
-    if (!path || !line || !body) continue;
-    const externalId = stringValue(item.noteId) || stringValue(item.note_id) || stringValue(item.id) || createHash("sha256").update(`${path}:${line}:${body}`).digest("hex").slice(0, 16);
+    const path = stringValue(item.filePath) ?? stringValue(item.file) ?? stringValue(item.path);
+    const newLine =
+      numberValue(item.newLine) ??
+      numberValue(item.new_line) ??
+      rangeEnd(item.newRange) ??
+      rangeEnd(item.new_range);
+    const oldLine =
+      numberValue(item.oldLine) ??
+      numberValue(item.old_line) ??
+      rangeEnd(item.oldRange) ??
+      rangeEnd(item.old_range);
+    const body = stringValue(item.summary) ?? stringValue(item.body) ?? stringValue(item.rationale);
+    const line = newLine ?? oldLine;
+    if (path === undefined || line === undefined || body === undefined) continue;
+    const externalId =
+      stringValue(item.noteId) ??
+      stringValue(item.note_id) ??
+      stringValue(item.id) ??
+      createHash("sha256").update(`${path}:${line}:${body}`).digest("hex").slice(0, 16);
     notes.push({
       id: `hunk:${externalId}`,
       body,
-      createdAt: stringValue(item.createdAt) || stringValue(item.created_at) || new Date().toISOString(),
+      createdAt: stringValue(item.createdAt) ?? stringValue(item.created_at) ?? new Date().toISOString(),
       path,
       line,
-      side: newLine ? "RIGHT" : "LEFT",
+      side: newLine === undefined ? "LEFT" : "RIGHT",
     });
   }
   return notes;
@@ -68,7 +81,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function stringValue(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value : undefined;
+  return typeof value === "string" && value.trim() !== "" ? value : undefined;
 }
 
 function numberValue(value: unknown): number | undefined {
@@ -77,5 +90,5 @@ function numberValue(value: unknown): number | undefined {
 
 function rangeEnd(value: unknown): number | undefined {
   if (!Array.isArray(value)) return undefined;
-  return numberValue(value[1]) || numberValue(value[0]);
+  return numberValue(value[1]) ?? numberValue(value[0]);
 }

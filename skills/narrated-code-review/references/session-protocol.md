@@ -65,7 +65,7 @@ Required manifest shape:
 }
 ```
 
-Every chapter needs a stable kebab-case `id`. `files` contains repository-relative paths used to construct that chapter's cmux diff. An empty file list opens the complete PR diff. `diagram` is optional and accepts plain Mermaid or ASCII source for display.
+Every chapter needs a stable kebab-case `id`. `files` contains only the repository-relative paths relevant to that chapter. The companion presents one selected file at a time. An empty file list makes a story-only chapter; it never falls back to the complete PR diff. `diagram` is optional and accepts Mermaid flowchart or ASCII source for terminal rendering.
 
 The base and head commits must exist locally for chapter diffs. Fetch missing commits without changing the reviewer's checked-out branch.
 
@@ -82,16 +82,16 @@ cmux-review show
 
 Conversation notes can omit a location. Out-of-scope findings promoted into the current review use `--promote`.
 
-Keep the agent conversation and one review pane. Move the visual pane to another chapter with:
+Keep the agent conversation and one OpenTUI companion. Move it to another chapter with:
 
 ```bash
-cmux-review chapter --select request-flow --open
+cmux-review chapter --select request-flow
 ```
 
-When the chapter diff is open in Hunk, the reviewer can attach comments directly to lines. Import new human-authored notes into the active chapter with:
+The companion watches the session and updates in place. Use `--open` to open or focus it when needed. Record conversational or line-specific notes through the CLI so they appear in the companion:
 
 ```bash
-cmux-review sync-hunk --chapter request-flow
+cmux-review note --chapter request-flow --body "This should handle the missing value" --path src/api.ts --line 81 --side RIGHT
 ```
 
 ## Prepare a GitHub draft

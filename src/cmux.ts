@@ -1,55 +1,60 @@
-import { mkdir, writeFile } from "node:fs/promises";
-import { dirname, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
-import type { Chapter, ReviewSession } from "./types";
-import { hasHunk, openHunkChapter } from "./hunk";
-import { withWorkspace } from "./cmux-context";
 
-export async function openChapterDiff(session: ReviewSession, chapter: Chapter, sessionPath: string): Promise<void> {
-  if (hasHunk()) {
-    if (openHunkChapter(session, chapter)) return;
-    launchHunkPane(session, chapter);
-    return;
+import { resolveCmuxWorkspace, withWorkspace } from "./cmux-context";
+import { readRuntime, processIsAlive } from "./runtime";
+import type { ReviewSession } from "./types";
+
+export async function launchCompanion(session: ReviewSession, sessionPath: string): Promise<string> {
+  const existing = await readRuntime(sessionPath);
+  if (existing !== undefined && processIsAlive(existing.pid)) {
+    const focused = spawnSync(
+      "cmux",
+      ["focus-pane", "--pane", existing.pane, "--workspace", existing.workspace],
+      { encoding: "utf8" },
+    );
+    if (focused.status === 0) return existing.surface;
   }
 
-  const patchDir = resolve(dirname(sessionPath), "..", "patches", session.id);
-  await mkdir(patchDir, { recursive: true });
-  const safeId = chapter.id.replace(/[^a-zA-Z0-9_-]/g, "-");
-  const patchPath = resolve(patchDir, `${safeId}.patch`);
-  const revision = `${session.pr.baseSha}...${session.pr.headSha}`;
-  const args = ["-C", session.repoRoot, "diff", "--no-ext-diff", revision, "--", ...chapter.files];
-  const diff = spawnSync("git", args, { encoding: "utf8", maxBuffer: 50 * 1024 * 1024 });
-  if (diff.status !== 0) {
-    throw new Error(`Unable to build chapter diff: ${diff.stderr || "git diff failed"}`);
+  const workspace = resolveCmuxWorkspace();
+  if (workspace === undefined || workspace === "") {
+    throw new Error("cmux-review launch must run inside a cmux workspace");
   }
-  await writeFile(patchPath, diff.stdout, "utf8");
-
-  const cmux = spawnSync(
+  const paneResult = spawnSync(
     "cmux",
-    withWorkspace(["diff", patchPath, "--title", `Review · ${chapter.title}`, "--layout", "split", "--focus", "true"]),
+    withWorkspace(["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true"]),
     { cwd: session.repoRoot, encoding: "utf8" },
   );
-  if (cmux.status !== 0) {
-    throw new Error(`Unable to open cmux diff: ${cmux.stderr || "cmux diff failed"}`);
-  }
-}
+  if (paneResult.status !== 0)
+    throw new Error(nonEmpty(paneResult.stderr, "cmux could not create a companion pane"));
+  const pane = referenceFrom(paneResult.stdout, "pane");
+  if (pane === undefined)
+    throw new Error(`cmux returned an unexpected pane response: ${paneResult.stdout.trim()}`);
 
-function launchHunkPane(session: ReviewSession, chapter: Chapter): void {
-  const paneResult = spawnSync("cmux", withWorkspace(["new-pane", "--type", "terminal", "--direction", "right", "--focus", "true"]), {
-    cwd: session.repoRoot,
+  const surfaces = spawnSync("cmux", ["list-pane-surfaces", "--pane", pane, "--workspace", workspace], {
     encoding: "utf8",
   });
-  if (paneResult.status !== 0) throw new Error(paneResult.stderr || "cmux could not create a Hunk pane");
-  const pane = paneResult.stdout.match(/pane:\d+/)?.[0];
-  if (!pane) throw new Error(`cmux returned an unexpected pane response: ${paneResult.stdout.trim()}`);
-  const surfaces = spawnSync("cmux", withWorkspace(["list-pane-surfaces", "--pane", pane]), { encoding: "utf8" });
-  const surface = surfaces.stdout.match(/surface:\d+/)?.[0];
-  if (surfaces.status !== 0 || !surface) throw new Error(surfaces.stderr || "cmux did not create a terminal surface for Hunk");
-  const revision = `${session.pr.baseSha}...${session.pr.headSha}`;
-  const args = ["hunk", "diff", revision, "--", ...chapter.files].map(shellQuote).join(" ");
-  const command = `cd ${shellQuote(session.repoRoot)} && ${args}\n`;
-  const sent = spawnSync("cmux", withWorkspace(["send", "--surface", surface, command]), { encoding: "utf8" });
-  if (sent.status !== 0) throw new Error(sent.stderr || "cmux could not start Hunk");
+  const surface = referenceFrom(surfaces.stdout, "surface");
+  if (surfaces.status !== 0 || surface === undefined) {
+    throw new Error(nonEmpty(surfaces.stderr, "cmux did not create a terminal surface for the companion"));
+  }
+
+  const command = `cd ${shellQuote(session.repoRoot)} && cmux-review companion --session ${shellQuote(sessionPath)} --pane ${shellQuote(pane)} --surface ${shellQuote(surface)} --workspace ${shellQuote(workspace)}\n`;
+  const sent = spawnSync("cmux", ["send", "--surface", surface, "--workspace", workspace, command], {
+    encoding: "utf8",
+  });
+  if (sent.status !== 0) throw new Error(nonEmpty(sent.stderr, "cmux could not start the companion"));
+  spawnSync("cmux", ["rename-tab", "--surface", surface, "--workspace", workspace, "Narrated review"], {
+    encoding: "utf8",
+  });
+  return surface;
+}
+
+function referenceFrom(output: string, kind: "pane" | "surface"): string | undefined {
+  return output.match(new RegExp(`${kind}:\\d+`, "u"))?.[0];
+}
+
+function nonEmpty(value: string, fallback: string): string {
+  return value.trim() === "" ? fallback : value;
 }
 
 function shellQuote(value: string): string {

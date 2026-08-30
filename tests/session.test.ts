@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve } from "node:path";
+
 import { loadSession, saveSession, validateSession } from "../src/session";
 import { renderSummary } from "../src/summary";
 import type { ReviewSession } from "../src/types";
@@ -65,11 +66,13 @@ describe("review sessions", () => {
 
   test("rejects duplicate chapter ids and invalid clarity", () => {
     const duplicated = fixture();
-    duplicated.chapters.push({ ...duplicated.chapters[0]!, notes: [], findings: [] });
-    expect(() => validateSession(duplicated)).toThrow("Duplicate chapter id");
+    const original = duplicated.chapters.at(0);
+    if (original === undefined) throw new Error("Fixture must contain a chapter");
+    duplicated.chapters.push({ ...original, notes: [], findings: [] });
+    expect(() => validateSession(duplicated)).toThrow("chapter ids must be unique");
     const invalid = fixture();
     invalid.intent.clarity.score = 101;
-    expect(() => validateSession(invalid)).toThrow("between 0 and 100");
+    expect(() => validateSession(invalid)).toThrow("Too big");
   });
 
   test("renders the exact publishable draft", () => {
@@ -90,6 +93,6 @@ describe("review sessions", () => {
     temporaryPaths.push(dir);
     const path = resolve(dir, "session.json");
     await writeFile(path, "not-json");
-    await expect(loadSession(path)).rejects.toThrow("not valid JSON");
+    expect(loadSession(path)).rejects.toThrow("Review session is invalid");
   });
 });

@@ -1,4 +1,7 @@
 import { spawnSync } from "node:child_process";
+
+import { z } from "zod";
+
 import type { ReviewSession } from "./types";
 
 export interface PublishResult {
@@ -6,15 +9,26 @@ export interface PublishResult {
   id?: number;
 }
 
+const PublishResultSchema = z.object({ html_url: z.string().optional(), id: z.number().optional() });
+
 export function publishReview(session: ReviewSession): PublishResult {
-  if (!session.draft) throw new Error("Prepare a review draft before publishing");
-  if (!session.draftReviewedAt || !session.draftUpdatedAt || session.draftReviewedAt < session.draftUpdatedAt) {
-    throw new Error("The current draft has not passed the summary checkpoint. Run `cmux-review summary --ack` first.");
+  if (session.draft === undefined) throw new Error("Prepare a review draft before publishing");
+  if (
+    session.draftReviewedAt === undefined ||
+    session.draftUpdatedAt === undefined ||
+    session.draftReviewedAt < session.draftUpdatedAt
+  ) {
+    throw new Error(
+      "The current draft has not passed the summary checkpoint. Run `cmux-review summary --ack` first.",
+    );
   }
-  if (session.publishedAt) throw new Error(`This session was already published at ${session.publishedAt}`);
+  if (session.publishedAt !== undefined)
+    throw new Error(`This session was already published at ${session.publishedAt}`);
   const pending = session.chapters.filter((chapter) => chapter.outcome === "pending");
   if (pending.length > 0) {
-    throw new Error(`Every chapter needs an explicit outcome. Pending: ${pending.map((chapter) => chapter.title).join(", ")}`);
+    throw new Error(
+      `Every chapter needs an explicit outcome. Pending: ${pending.map((chapter) => chapter.title).join(", ")}`,
+    );
   }
 
   const payload = {
@@ -26,8 +40,8 @@ export function publishReview(session: ReviewSession): PublishResult {
       path: comment.path,
       line: comment.line,
       side: comment.side,
-      ...(comment.startLine ? { start_line: comment.startLine } : {}),
-      ...(comment.startSide ? { start_side: comment.startSide } : {}),
+      ...(comment.startLine === undefined ? {} : { start_line: comment.startLine }),
+      ...(comment.startSide === undefined ? {} : { start_side: comment.startSide }),
     })),
   };
   const endpoint = `repos/${session.pr.owner}/${session.pr.repo}/pulls/${session.pr.number}/reviews`;
@@ -41,5 +55,5 @@ export function publishReview(session: ReviewSession): PublishResult {
     maxBuffer: 10 * 1024 * 1024,
   });
   if (result.status !== 0) throw new Error(result.stderr || "GitHub rejected the review");
-  return JSON.parse(result.stdout) as PublishResult;
+  return PublishResultSchema.parse(JSON.parse(result.stdout));
 }

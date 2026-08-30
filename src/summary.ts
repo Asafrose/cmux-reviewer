@@ -29,18 +29,25 @@ export function renderSummary(session: ReviewSession): string {
   }
 
   lines.push("", "## Exact GitHub review", "");
-  if (!session.draft) {
+  if (session.draft === undefined) {
     lines.push("No review draft has been prepared.");
     return `${lines.join("\n")}\n`;
   }
 
-  lines.push(`Decision: **${session.draft.event}**`, "", session.draft.body || "_(No review body)_");
-  lines.push("", "## Inline comments", "");
+  lines.push(
+    `Decision: **${session.draft.event}**`,
+    "",
+    session.draft.body === "" ? "_(No review body)_" : session.draft.body,
+    "",
+    "## Inline comments",
+    "",
+  );
   if (session.draft.comments.length === 0) {
     lines.push("No inline comments.");
   } else {
     session.draft.comments.forEach((comment, index) => {
-      const range = comment.startLine ? `${comment.startLine}-${comment.line}` : String(comment.line);
+      const range =
+        comment.startLine === undefined ? String(comment.line) : `${comment.startLine}-${comment.line}`;
       lines.push(`${index + 1}. \`${comment.path}:${range}\` (${comment.side})`, "", `   ${comment.body}`);
     });
   }
